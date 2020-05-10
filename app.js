@@ -26,6 +26,9 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
+/*
+ * Given a food, return the IDs of vendors
+ */
 async function getVendors(name) {
   let food = await fetch("http://localhost:3000/api/vendors/" + name)
       .then(res => res.json())
@@ -36,6 +39,9 @@ async function getVendors(name) {
   return food[0].vendors;
 }
 
+/*
+ * Given a list of vendor IDs, return the actual vendors that have your food
+ */
 async function getPrices(name) {
   const vendors = await getVendors(name);
   let result = [];
