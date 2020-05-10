@@ -1,41 +1,70 @@
-var createError = require('http-errors');
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
+const express = require('express');
+const fetch = require('node-fetch')
+const app = express();
 
-var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
-
-var app = express();
-
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'pug');
-
-app.use(logger('dev'));
 app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/', indexRouter);
-app.use('/users', usersRouter);
+const bodyParser = require("body-parser");
+app.use(bodyParser.urlencoded({ extended: false }));
 
-// catch 404 and forward to error handler
-app.use(function(req, res, next) {
-  next(createError(404));
+const foodSuppliers = [
+  {food: "apple", vendors: [1]},
+  {food: "grape", vendors: [1,3]},
+  {food: "chicken", vendors: [2]},
+  {food: "potato", vendors: [2]},
+  {food: "fish", vendors: [3]},
+]
+
+const foodVendors = [
+  {id: 1, inventory: {"apple":1.5, "grape":2.5}},
+  {id: 2, inventory: {"potato":1.5, "chicken":2.5}},
+  {id: 3, inventory: {"fish":1.5, "grape":2.5}},
+]
+
+
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/index.html');
 });
 
-// error handler
-app.use(function(err, req, res, next) {
-  // set locals, only providing error in development
-  res.locals.message = err.message;
-  res.locals.error = req.app.get('env') === 'development' ? err : {};
+async function getVendors(name) {
+  let food = await fetch("http://localhost:3000/api/vendors/" + name)
+      .then(res => res.json())
+      .catch((err) => {console.log(err)});
+  if (!food.length) {
+    return [];
+  }
+  return food[0].vendors;
+}
 
-  // render the error page
-  res.status(err.status || 500);
-  res.render('error');
+async function getPrices(name) {
+  const vendors = await getVendors(name);
+  let result = [];
+  for (let i = 0; i < vendors.length; ++i) {
+    let prices = await fetch("http://localhost:3000/api/prices/" + vendors[i])
+        .then(res => res.json())
+        .catch((err) => {console.log(err)});
+    result.push(prices);
+  }
+  return result;
+}
+
+app.post('/api/vendors', async (req, res) => {
+  const result = await getPrices(req.body.food);
+  res.send(result);
 });
 
-module.exports = app;
+app.get("/api/vendors/:food", (req, res) => {
+  const validSuppliers = foodSuppliers.filter(word => req.params.food === word.food);
+  res.send(validSuppliers)
+});
+
+app.get("/api/prices/:vendor", (req, res) => {
+  const validVendors = foodVendors.filter(word => parseInt(req.params.vendor) === word.id);
+  res.send(validVendors)
+});
+
+// PORT
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Listening on port ${port} `)
+});
