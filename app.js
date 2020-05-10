@@ -40,7 +40,10 @@ async function getVendors(name) {
 }
 
 /*
- * Given a list of vendor IDs, return the actual vendors that have your food
+ * Given a food, return the actual vendors that have your food
+ * This involves 2 steps, as given in the project specs.
+ * 1) Find the vendor IDs
+ * 2) Get the vendor information from those IDs
  */
 async function getPrices(name) {
   const vendors = await getVendors(name);
@@ -54,22 +57,25 @@ async function getPrices(name) {
   return result;
 }
 
+// Sends a food, returns the prices of every vendor that has it
 app.post('/api/vendors', async (req, res) => {
   const result = await getPrices(req.body.food);
   res.send(result);
 });
 
+// Given an individual food, return the vendors that have it
 app.get("/api/vendors/:food", (req, res) => {
-  const validSuppliers = foodSuppliers.filter(word => req.params.food === word.food);
+  const validSuppliers = foodSuppliers.filter(item => req.params.food === item.food);
   res.send(validSuppliers)
 });
 
+// Given an individual vendor, return the prices of all their goods
 app.get("/api/prices/:vendor", (req, res) => {
-  const validVendors = foodVendors.filter(word => parseInt(req.params.vendor) === word.id);
-  res.send(validVendors)
+  const foodPrices = foodVendors.filter(vendor => parseInt(req.params.vendor) === vendor.id);
+  res.send(foodPrices)
 });
 
-// PORT
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Listening on port ${port} `)
