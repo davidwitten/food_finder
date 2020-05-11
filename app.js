@@ -4,6 +4,8 @@ const app = express();
 const opentelemetry = require('@opentelemetry/api');
 const { BasicTracerProvider, ConsoleSpanExporter, SimpleSpanProcessor } = require('@opentelemetry/tracing');
 const { JaegerExporter } = require('@opentelemetry/exporter-jaeger');
+const { MeterProvider } = require('@opentelemetry/metrics');
+const { PrometheusExporter } = require('@opentelemetry/exporter-prometheus');
 
 app.use(express.json());
 
@@ -11,12 +13,35 @@ const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
 
 // Setup for OpenTelemetry
-const exporter = new JaegerExporter({ serviceName: 'food-finder' });
+const tracer_exporter = new JaegerExporter({ serviceName: 'food-finder' });
 const provider = new BasicTracerProvider();
-provider.addSpanProcessor(new SimpleSpanProcessor(exporter));
+provider.addSpanProcessor(new SimpleSpanProcessor(tracer_exporter));
 provider.addSpanProcessor(new SimpleSpanProcessor(new ConsoleSpanExporter()));
 provider.register();
 const tracer = opentelemetry.trace.getTracer('example-basic-tracer-node');
+
+const metric_exporter = new PrometheusExporter(
+    {
+      startServer: true,
+    },
+    () => {
+      console.log('prometheus scrape endpoint: http://localhost:9090/metrics');
+    },
+);
+const meter = new MeterProvider({
+  exporter: metric_exporter,
+  interval: 1000,
+}).getMeter('example-prometheus');
+
+// Monotonic counters can only be increased.
+const requestCount = meter.createCounter('Requests', {
+  monotonic: true,
+  labelKeys: ['pid'],
+  description: 'Counts the number of requests',
+});
+const labels = {pid: process.pid}
+
+
 
 
 const foodSuppliers = [
@@ -84,6 +109,7 @@ async function getPrices(name) {
 
 // Sends a food, returns the prices of every vendor that has it
 app.post('/api/vendors', async (req, res) => {
+  requestCount.bind(labels).add(1);
   const result = await getPrices(req.body.food);
   res.send(result);
 });
