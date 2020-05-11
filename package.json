@@ -12,6 +12,8 @@
     "http-errors": "~1.6.3",
     "morgan": "~1.9.1",
     "nodemon": "^2.0.3",
-    "pug": "2.0.0-beta11"
+    "@opentelemetry/api": "^0.7.0",
+    "@opentelemetry/exporter-jaeger": "^0.7.0",
+    "@opentelemetry/tracing": "^0.7.0"
   }
 }

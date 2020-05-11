@@ -1,11 +1,23 @@
 const express = require('express');
 const fetch = require('node-fetch')
 const app = express();
+const opentelemetry = require('@opentelemetry/api');
+const { BasicTracerProvider, ConsoleSpanExporter, SimpleSpanProcessor } = require('@opentelemetry/tracing');
+const { JaegerExporter } = require('@opentelemetry/exporter-jaeger');
 
 app.use(express.json());
 
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
+
+// Setup for OpenTelemetry
+const exporter = new JaegerExporter({ serviceName: 'food-finder' });
+const provider = new BasicTracerProvider();
+provider.addSpanProcessor(new SimpleSpanProcessor(exporter));
+provider.addSpanProcessor(new SimpleSpanProcessor(new ConsoleSpanExporter()));
+provider.register();
+const tracer = opentelemetry.trace.getTracer('example-basic-tracer-node');
+
 
 const foodSuppliers = [
   {food: "apple", vendors: [1]},
@@ -29,10 +41,14 @@ app.get('/', (req, res) => {
 /*
  * Given a food, return the IDs of vendors
  */
-async function getVendors(name) {
+async function getVendors(name, price_span) {
+  const vendorSpan = tracer.startSpan("getVendors", {parent:price_span});
   let food = await fetch("http://localhost:3000/api/vendors/" + name)
       .then(res => res.json())
       .catch((err) => {console.log(err)});
+  vendorSpan.setAttribute('name', name);
+  vendorSpan.addEvent('Getting vendors');
+  vendorSpan.end();
   if (!food.length) {
     return [];
   }
@@ -46,14 +62,23 @@ async function getVendors(name) {
  * 2) Get the vendor information from those IDs
  */
 async function getPrices(name) {
-  const vendors = await getVendors(name);
+  const price_span = tracer.startSpan(`getPrices_${name}`);
+  const vendors = await getVendors(name, price_span);
   let result = [];
-  for (let i = 0; i < vendors.length; ++i) {
-    let prices = await fetch("http://localhost:3000/api/prices/" + vendors[i])
+  for (let id = 0; id < vendors.length; ++id) {
+    find_id = tracer.startSpan(`ID_${id}`, {parent:price_span});
+
+    let prices = await fetch("http://localhost:3000/api/prices/" + vendors[id])
         .then(res => res.json())
         .catch((err) => {console.log(err)});
     result.push(prices);
+
+    find_id.setAttribute("name", id);
+    find_id.addEvent("Extracted ID information");
+    find_id.end();
   }
+  price_span.addEvent("Overall event");
+  price_span.end();
   return result;
 }
 
