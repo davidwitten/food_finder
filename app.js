@@ -14,12 +14,6 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 // Setup for OpenTelemetry
 const tracer_exporter = new JaegerExporter({ serviceName: 'food-finder' });
-const provider = new BasicTracerProvider();
-provider.addSpanProcessor(new SimpleSpanProcessor(tracer_exporter));
-provider.addSpanProcessor(new SimpleSpanProcessor(new ConsoleSpanExporter()));
-provider.register();
-const tracer = opentelemetry.trace.getTracer('example-basic-tracer-node');
-
 const metric_exporter = new PrometheusExporter(
     {
       startServer: true,
@@ -28,6 +22,14 @@ const metric_exporter = new PrometheusExporter(
       console.log('prometheus scrape endpoint: http://localhost:9090/metrics');
     },
 );
+
+
+const provider = new BasicTracerProvider();
+provider.addSpanProcessor(new SimpleSpanProcessor(tracer_exporter));
+provider.addSpanProcessor(new SimpleSpanProcessor(new ConsoleSpanExporter()));
+provider.register();
+
+const tracer = opentelemetry.trace.getTracer('example-basic-tracer-node');
 const meter = new MeterProvider({
   exporter: metric_exporter,
   interval: 1000,
@@ -39,6 +41,20 @@ const requestCount = meter.createCounter('Requests', {
   labelKeys: ['pid'],
   description: 'Counts the number of requests',
 });
+
+// Monotonic counters can only be increased.
+const errorCount = meter.createCounter('Errors', {
+  monotonic: true,
+  labelKeys: ['pid'],
+  description: 'Counts the number of errors',
+});
+
+const responseLatency = meter.createObserver("response_latency", {
+  monotonic: false,
+  labelKeys: ["pid"],
+  description: "Records latency of response"
+});
+
 const labels = {pid: process.pid}
 
 
@@ -109,8 +125,14 @@ async function getPrices(name) {
 
 // Sends a food, returns the prices of every vendor that has it
 app.post('/api/vendors', async (req, res) => {
+  const requestReceived = new Date().getTime();
   requestCount.bind(labels).add(1);
+  errorCount.bind(labels).add(1);
   const result = await getPrices(req.body.food);
+  const measuredLatency = new Date().getTime() - requestReceived;
+  //responseLatency.bind(labels).observe(measuredLatency);
+  console.log("HERE");
+  console.log(measuredLatency);
   res.send(result);
 });
 
