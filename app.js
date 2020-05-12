@@ -1,13 +1,11 @@
 const express = require('express');
 const fetch = require('node-fetch')
 const app = express();
-const opentelemetry = require('@opentelemetry/api');
-const { BasicTracerProvider, ConsoleSpanExporter, SimpleSpanProcessor } = require('@opentelemetry/tracing');
-const { JaegerExporter } = require('@opentelemetry/exporter-jaeger');
-const { MeterProvider } = require('@opentelemetry/metrics');
-const { PrometheusExporter } = require('@opentelemetry/exporter-prometheus');
+const {globalStats, MeasureUnit, AggregationType} = require('@opencensus/core');
+const { PrometheusStatsExporter } = require('@opencensus/exporter-prometheus');
 
 app.use(express.json());
+
 
 // Open Census
 
@@ -15,51 +13,33 @@ const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
 
 // Setup for OpenTelemetry
-const tracer_exporter = new JaegerExporter({ serviceName: 'food-finder' });
-const metric_exporter = new PrometheusExporter(
-    {
-      startServer: true,
-    },
-    () => {
-      console.log('prometheus scrape endpoint: http://localhost:9090/metrics');
-    },
+const exporter = new PrometheusStatsExporter({
+  port: 9464,
+  startServer: true
+});
+
+globalStats.registerExporter(exporter);
+
+const LATENCY_MS = globalStats.createMeasureInt64(
+    'task_latency',
+    MeasureUnit.MS,
+    'The task latency in milliseconds'
 );
 
+// Register the view. It is imperative that this step exists,
+// otherwise recorded metrics will be dropped and never exported.
+const view = globalStats.createView(
+    'task_latency_distribution',
+    LATENCY_MS,
+    AggregationType.DISTRIBUTION,
+    [],
+    'The distribution of the task latencies.',
+    // Latency in buckets:
+    // [>=0ms, >=100ms, >=200ms, >=400ms, >=1s, >=2s, >=4s]
+    [0, 100, 200, 400, 1000, 2000, 4000]
+);
 
-const provider = new BasicTracerProvider();
-provider.addSpanProcessor(new SimpleSpanProcessor(tracer_exporter));
-provider.addSpanProcessor(new SimpleSpanProcessor(new ConsoleSpanExporter()));
-provider.register();
-
-const tracer = opentelemetry.trace.getTracer('example-basic-tracer-node');
-const meter = new MeterProvider({
-  exporter: metric_exporter,
-  interval: 1000,
-}).getMeter('example-prometheus');
-
-// Monotonic counters can only be increased.
-const requestCount = meter.createCounter('Requests', {
-  monotonic: true,
-  labelKeys: ['pid'],
-  description: 'Counts the number of requests',
-});
-
-// Monotonic counters can only be increased.
-const errorCount = meter.createCounter('Errors', {
-  monotonic: true,
-  labelKeys: ['pid'],
-  description: 'Counts the number of errors',
-});
-
-const responseLatency = meter.createObserver("response_latency", {
-  monotonic: false,
-  labelKeys: ["pid"],
-  description: "Records latency of response"
-});
-
-const labels = {pid: process.pid}
-
-
+globalStats.registerView(view);
 
 
 const foodSuppliers = [
@@ -84,14 +64,10 @@ app.get('/', (req, res) => {
 /*
  * Given a food, return the IDs of vendors
  */
-async function getVendors(name, price_span) {
-  const vendorSpan = tracer.startSpan("getVendors", {parent:price_span});
+async function getVendors(name) {
   let food = await fetch("http://localhost:3000/api/vendors/" + name)
       .then(res => res.json())
       .catch((err) => {console.log(err)});
-  vendorSpan.setAttribute('name', name);
-  vendorSpan.addEvent('Getting vendors');
-  vendorSpan.end();
   if (!food.length) {
     return [];
   }
@@ -105,34 +81,30 @@ async function getVendors(name, price_span) {
  * 2) Get the vendor information from those IDs
  */
 async function getPrices(name) {
-  const price_span = tracer.startSpan(`getPrices_${name}`);
-  const vendors = await getVendors(name, price_span);
+  const vendors = await getVendors(name);
   let result = [];
   for (let id = 0; id < vendors.length; ++id) {
-    find_id = tracer.startSpan(`ID_${id}`, {parent:price_span});
 
     let prices = await fetch("http://localhost:3000/api/prices/" + vendors[id])
         .then(res => res.json())
         .catch((err) => {console.log(err)});
     result.push(prices);
 
-    find_id.setAttribute("name", id);
-    find_id.addEvent("Extracted ID information");
-    find_id.end();
   }
-  price_span.addEvent("Overall event");
-  price_span.end();
   return result;
 }
 
 // Sends a food, returns the prices of every vendor that has it
 app.post('/api/vendors', async (req, res) => {
   const requestReceived = new Date().getTime();
-  requestCount.bind(labels).add(1);
-  errorCount.bind(labels).add(1);
   const result = await getPrices(req.body.food);
   const measuredLatency = new Date().getTime() - requestReceived;
-  //responseLatency.bind(labels).observe(measuredLatency);
+  globalStats.record([
+    {
+      measure: LATENCY_MS,
+      value: measuredLatency,
+    },
+  ]);
   console.log("HERE");
   console.log(measuredLatency);
   res.send(result);
