@@ -9,6 +9,8 @@ const { PrometheusExporter } = require('@opentelemetry/exporter-prometheus');
 
 app.use(express.json());
 
+// Open Census
+
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
 
