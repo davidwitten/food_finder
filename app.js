@@ -2,6 +2,7 @@ const express = require('express');
 const fetch = require('node-fetch')
 const app = express();
 const {globalStats, MeasureUnit, AggregationType} = require('@opencensus/core');
+const tracing = require('@opencensus/nodejs');
 const { PrometheusStatsExporter } = require('@opencensus/exporter-prometheus');
 
 app.use(express.json());
@@ -26,6 +27,27 @@ const LATENCY_MS = globalStats.createMeasureInt64(
     'The task latency in milliseconds'
 );
 
+const RESPONSE_COUNT = globalStats.createMeasureInt64(
+    'vendor_response_count',
+    MeasureUnit.UNIT,
+    'The number of vendors returned per response'
+);
+
+// Register the view. It is imperative that this step exists,
+// otherwise recorded metrics will be dropped and never exported.
+const view2 = globalStats.createView(
+    'vendor_response_distribution',
+    RESPONSE_COUNT,
+    AggregationType.DISTRIBUTION,
+    [],
+    'The distribution of the responses.',
+    // Latency in buckets:
+    // [>=0ms, >=100ms, >=200ms, >=400ms, >=1s, >=2s, >=4s]
+    [0, 1, 2, 3, 4, 5, 6]
+);
+
+globalStats.registerView(view2);
+
 // Register the view. It is imperative that this step exists,
 // otherwise recorded metrics will be dropped and never exported.
 const view = globalStats.createView(
@@ -36,7 +58,7 @@ const view = globalStats.createView(
     'The distribution of the task latencies.',
     // Latency in buckets:
     // [>=0ms, >=100ms, >=200ms, >=400ms, >=1s, >=2s, >=4s]
-    [0, 100, 200, 400, 1000, 2000, 4000]
+    [0, 10, 20, 40, 100, 200, 400]
 );
 
 globalStats.registerView(view);
@@ -83,6 +105,12 @@ async function getVendors(name) {
 async function getPrices(name) {
   const vendors = await getVendors(name);
   let result = [];
+  globalStats.record([
+    {
+      measure: RESPONSE_COUNT,
+      value: vendors.length,
+    },
+  ]);
   for (let id = 0; id < vendors.length; ++id) {
 
     let prices = await fetch("http://localhost:3000/api/prices/" + vendors[id])
