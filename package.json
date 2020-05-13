@@ -8,6 +8,8 @@
   "dependencies": {
     "@opencensus/core": "0.0.21",
     "@opencensus/exporter-prometheus": "0.0.21",
+    "@opencensus/nodejs": "^0.0.19",
+    "@opencensus/exporter-jaeger": "^0.0.21",
     "@opentelemetry/api": "^0.7.0",
     "@opentelemetry/exporter-jaeger": "^0.7.0",
     "@opentelemetry/exporter-prometheus": "^0.7.0",

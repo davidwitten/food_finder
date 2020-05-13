@@ -4,6 +4,7 @@ const app = express();
 const {globalStats, MeasureUnit, AggregationType} = require('@opencensus/core');
 const tracing = require('@opencensus/nodejs');
 const { PrometheusStatsExporter } = require('@opencensus/exporter-prometheus');
+const { JaegerTraceExporter } = require('@opencensus/exporter-jaeger');
 
 app.use(express.json());
 
@@ -13,13 +14,21 @@ app.use(express.json());
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
 
+
+const jaeger_exporter = new JaegerTraceExporter({
+  serviceName: 'practice',
+  port: 6832,
+
+});
+
 // Setup for OpenTelemetry
-const exporter = new PrometheusStatsExporter({
-  port: 9464,
+const prometheus_exporter = new PrometheusStatsExporter({
+  //port: 9464,
   startServer: true
 });
 
-globalStats.registerExporter(exporter);
+globalStats.registerExporter(prometheus_exporter);
+tracing.registerExporter(jaeger_exporter).start();
 
 const LATENCY_MS = globalStats.createMeasureInt64(
     'task_latency',
@@ -83,6 +92,10 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
+
+const tracer = tracing.start({samplingRate: 1}).tracer;
+
+
 /*
  * Given a food, return the IDs of vendors
  */
@@ -124,18 +137,20 @@ async function getPrices(name) {
 
 // Sends a food, returns the prices of every vendor that has it
 app.post('/api/vendors', async (req, res) => {
-  const requestReceived = new Date().getTime();
-  const result = await getPrices(req.body.food);
-  const measuredLatency = new Date().getTime() - requestReceived;
-  globalStats.record([
-    {
-      measure: LATENCY_MS,
-      value: measuredLatency,
-    },
-  ]);
-  console.log("HERE");
-  console.log(measuredLatency);
-  res.send(result);
+  const span = tracer.startRootSpan({name: 'main'}, async (rootSpan) => {
+    const requestReceived = new Date().getTime();
+    const result = await getPrices(req.body.food);
+    const measuredLatency = new Date().getTime() - requestReceived;
+    globalStats.record([
+      {
+        measure: LATENCY_MS,
+        value: measuredLatency,
+      },
+    ]);
+    console.log("HERE");
+    console.log(measuredLatency);
+    rootSpan.end();
+    res.send(result);});
 });
 
 // Given an individual food, return the vendors that have it
