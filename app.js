@@ -3,8 +3,7 @@ const fetch = require('node-fetch')
 const app = express();
 const {globalStats, MeasureUnit, AggregationType} = require('@opencensus/core');
 const tracing = require('@opencensus/nodejs');
-const { PrometheusStatsExporter } = require('@opencensus/exporter-prometheus');
-const { JaegerTraceExporter } = require('@opencensus/exporter-jaeger');
+const { StackdriverStatsExporter, StackdriverTraceExporter} = require('@opencensus/exporter-stackdriver');
 
 
 const foodSuppliers = [
@@ -33,19 +32,14 @@ const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
 
 
-const jaeger_exporter = new JaegerTraceExporter({
-  serviceName: 'practice',
-  port: 6832,
-
-});
+const prom_exporter = new StackdriverStatsExporter({projectId: "opentel-davidwitten-starter"});
+globalStats.registerExporter(prom_exporter);
 
 // Setup for OpenTelemetry
-const prometheus_exporter = new PrometheusStatsExporter({
-  port: 9464,
-  startServer: true
-});
+const jaeger_exporter = new StackdriverTraceExporter({projectId: "opentel-davidwitten-start"});
 
-globalStats.registerExporter(prometheus_exporter);
+//globalStats.registerExporter(prometheus_exporter);
+//globalStats.registerExporter(jaeger_exporter);
 tracing.registerExporter(jaeger_exporter).start();
 
 const LATENCY_MS = globalStats.createMeasureInt64(
@@ -130,11 +124,11 @@ async function getVendors(name) {
  * 2) Get the vendor information from those IDs
  */
 async function getPrices(name) {
-  const span = tracer.startChildSpan('getVendors');
-  span.start();
-  span.addAnnotation("Getting vendors")
+ const span = tracer.startChildSpan('getVendors');
+ span.start();
+ span.addAnnotation("Getting vendors")
   const vendors = await getVendors(name);
-  span.end();
+ span.end();
   let result = [];
   globalStats.record([
     {
@@ -142,14 +136,14 @@ async function getPrices(name) {
       value: vendors.length,
     },
   ]);
-  const span2 = tracer.startChildSpan("getVendors");
-  span2.start();
+ const span2 = tracer.startChildSpan("getVendors");
+ span2.start();
   let j = 0;
   for (let i= 0; i < 50000; ++i){
     j += i;
   }
-  span2.addAnnotation("Artificial latency.")
-  span2.end();
+ span2.addAnnotation("Artificial latency.")
+ span2.end();
   for (let id = 0; id < vendors.length; ++id) {
 
     let prices = await fetch("http://localhost:3000/api/prices/" + vendors[id])
@@ -163,7 +157,7 @@ async function getPrices(name) {
 
 // Sends a food, returns the prices of every vendor that has it
 app.post('/api/vendors', async (req, res) => {
-  const span = tracer.startRootSpan({name: 'main'}, async (rootSpan) => {
+ const span = tracer.startRootSpan({name: 'main'}, async (rootSpan) => {
     const requestReceived = new Date().getTime();
     const result = await getPrices(req.body.food);
     const measuredLatency = new Date().getTime() - requestReceived;
@@ -175,8 +169,9 @@ app.post('/api/vendors', async (req, res) => {
     ]);
     console.log("HERE");
     console.log(measuredLatency);
-    rootSpan.end();
-    res.send(result);});
+ rootSpan.end();
+    res.send(result);
+});
 });
 
 // Given an individual food, return the vendors that have it
