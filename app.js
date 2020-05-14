@@ -6,6 +6,24 @@ const tracing = require('@opencensus/nodejs');
 const { PrometheusStatsExporter } = require('@opencensus/exporter-prometheus');
 const { JaegerTraceExporter } = require('@opencensus/exporter-jaeger');
 
+
+const foodSuppliers = [
+  {food: "apple", vendors: [1]},
+  {food: "grape", vendors: [1,3,4]},
+  {food: "chicken", vendors: [2]},
+  {food: "potato", vendors: [2]},
+  {food: "fish", vendors: [3]},
+  {food:"squid", vendors: [4]},
+];
+
+const foodVendors = [
+  {id: 1, inventory: {"apple":1.5, "grape":2.5}},
+  {id: 2, inventory: {"potato":1.5, "chicken":2.5}},
+  {id: 3, inventory: {"fish":1.5, "grape":2.5}},
+  {id: 4, inventory: {"squid":1.5, "grape":2.5}},
+];
+
+
 app.use(express.json());
 
 
@@ -23,7 +41,7 @@ const jaeger_exporter = new JaegerTraceExporter({
 
 // Setup for OpenTelemetry
 const prometheus_exporter = new PrometheusStatsExporter({
-  //port: 9464,
+  port: 9464,
   startServer: true
 });
 
@@ -73,19 +91,15 @@ const view = globalStats.createView(
 globalStats.registerView(view);
 
 
-const foodSuppliers = [
-  {food: "apple", vendors: [1]},
-  {food: "grape", vendors: [1,3]},
-  {food: "chicken", vendors: [2]},
-  {food: "potato", vendors: [2]},
-  {food: "fish", vendors: [3]},
-]
+const view_count = globalStats.createView(
+    "total_requests",
+    RESPONSE_COUNT,
+    AggregationType.COUNT,
+    [],
+    "Total responses."
+)
 
-const foodVendors = [
-  {id: 1, inventory: {"apple":1.5, "grape":2.5}},
-  {id: 2, inventory: {"potato":1.5, "chicken":2.5}},
-  {id: 3, inventory: {"fish":1.5, "grape":2.5}},
-]
+globalStats.registerView(view_count);
 
 
 app.get('/', (req, res) => {
@@ -116,7 +130,11 @@ async function getVendors(name) {
  * 2) Get the vendor information from those IDs
  */
 async function getPrices(name) {
+  const span = tracer.startChildSpan('getVendors');
+  span.start();
+  span.addAnnotation("Getting vendors")
   const vendors = await getVendors(name);
+  span.end();
   let result = [];
   globalStats.record([
     {
@@ -124,6 +142,14 @@ async function getPrices(name) {
       value: vendors.length,
     },
   ]);
+  const span2 = tracer.startChildSpan("getVendors");
+  span2.start();
+  let j = 0;
+  for (let i= 0; i < 50000; ++i){
+    j += i;
+  }
+  span2.addAnnotation("Artificial latency.")
+  span2.end();
   for (let id = 0; id < vendors.length; ++id) {
 
     let prices = await fetch("http://localhost:3000/api/prices/" + vendors[id])
