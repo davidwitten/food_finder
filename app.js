@@ -36,7 +36,7 @@ const prom_exporter = new StackdriverStatsExporter({projectId: "opentel-davidwit
 globalStats.registerExporter(prom_exporter);
 
 // Setup for OpenTelemetry
-const jaeger_exporter = new StackdriverTraceExporter({projectId: "opentel-davidwitten-start"});
+const jaeger_exporter = new StackdriverTraceExporter({projectId: "opentel-davidwitten-starter"});
 
 //globalStats.registerExporter(prometheus_exporter);
 //globalStats.registerExporter(jaeger_exporter);
