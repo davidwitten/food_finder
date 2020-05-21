@@ -52,20 +52,10 @@ const responseLatency = meter.createObserver("response_latency", {
   description: "Records latency of response"
 });
 
-
-let measuredLatency = 0;
-
-function helper() {
-  return measuredLatency;
-}
-
 const observable = new MetricObservable();
 responseLatency.setCallback((result) => {
-  result.observe(helper, {pid: "what"});
   result.observe(observable, {pid: "what"});
 })
-
-//setInterval(() => {observable.next(helper())}, 1000);
 
 const labels = {pid: process.pid.toString()};
 
@@ -149,7 +139,6 @@ app.post('/api/vendors', async (req, res) => {
   try {
   const requestReceived = new Date().getTime();
   requestCount.bind(labels).add(1);
-  meter.collect();
   const result = await getPrices(req.body.food);
   measuredLatency = new Date().getTime() - requestReceived;
   observable.next(measuredLatency);
