@@ -6,6 +6,16 @@
     "start": "nodemon app.js"
   },
   "dependencies": {
+    "@opencensus/core": "0.0.21",
+    "@opencensus/exporter-jaeger": "^0.0.21",
+    "@opencensus/exporter-prometheus": "0.0.21",
+    "@opencensus/exporter-stackdriver": "0.0.21",
+    "@opencensus/nodejs": "^0.0.19",
+    "@opentelemetry/api": "^0.7.0",
+    "@opentelemetry/exporter-jaeger": "^0.7.0",
+    "@opentelemetry/exporter-prometheus": "^0.7.0",
+    "@opentelemetry/metrics": "^0.7.0",
+    "@opentelemetry/tracing": "^0.7.0",
     "cookie-parser": "~1.4.4",
     "debug": "~2.6.9",
     "express": "~4.16.1",
