@@ -59,9 +59,6 @@ responseLatency.setCallback((result) => {
 
 const labels = {pid: process.pid.toString()};
 
-
-
-
 const foodSuppliers = [
   {food: "apple", vendors: [1]},
   {food: "grape", vendors: [1,3]},
@@ -85,7 +82,6 @@ app.get('/', (req, res) => {
  * Given a food, return the IDs of vendors
  */
 async function getVendors(name, price_span) {
-  try {
   const vendorSpan = tracer.startSpan("getVendors", {parent:price_span});
   let food = await fetch("http://localhost:3000/api/vendors/" + name)
       .then(res => res.json())
@@ -97,9 +93,6 @@ async function getVendors(name, price_span) {
     return [];
   }
   return food[0].vendors;
-} catch {
-  return [];
-}
 }
 
 /*
@@ -109,7 +102,6 @@ async function getVendors(name, price_span) {
  * 2) Get the vendor information from those IDs
  */
 async function getPrices(name) {
-  try {
   const price_span = tracer.startSpan(`getPrices_${name}`);
   const vendors = await getVendors(name, price_span);
   let result = [];
@@ -128,15 +120,10 @@ async function getPrices(name) {
   price_span.addEvent("Overall event");
   price_span.end();
   return result;
-  }
-  catch {
-    return [];
-  }
 }
 
 // Sends a food, returns the prices of every vendor that has it
 app.post('/api/vendors', async (req, res) => {
-  try {
   const requestReceived = new Date().getTime();
   requestCount.bind(labels).add(1);
   const result = await getPrices(req.body.food);
@@ -145,7 +132,6 @@ app.post('/api/vendors', async (req, res) => {
   console.log("HERE");
   console.log(measuredLatency);
   res.send(result);
-  } catch (error) {console.log(error);}
 });
 
 // Given an individual food, return the vendors that have it
