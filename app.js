@@ -3,25 +3,22 @@ const fetch = require('node-fetch')
 const app = express();
 const opentelemetry = require('@opentelemetry/api');
 const { BasicTracerProvider, ConsoleSpanExporter, SimpleSpanProcessor } = require('@opentelemetry/tracing');
-const { JaegerExporter } = require('@opentelemetry/exporter-jaeger');
-const { MeterProvider } = require('@opentelemetry/metrics');
-const { PrometheusExporter } = require('@opentelemetry/exporter-prometheus');
+const { TraceExporter } = require('@google-cloud/opentelemetry-cloud-trace-exporter');
+const { MetricExporter } = require('@google-cloud/opentelemetry-cloud-monitoring-exporter');
+// const { JaegerExporter } = require('@opentelemetry/exporter-jaeger');
+const { MeterProvider, MetricObservable } = require('@opentelemetry/metrics');
+// const { PrometheusExporter } = require('@opentelemetry/exporter-prometheus');
 
 app.use(express.json());
 
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
 
+const projectId = process.env.GOOGLE_PROJECT_ID;
+
 // Setup for OpenTelemetry
-const tracer_exporter = new JaegerExporter({ serviceName: 'food-finder' });
-const metric_exporter = new PrometheusExporter(
-    {
-      startServer: true,
-    },
-    () => {
-      console.log('prometheus scrape endpoint: http://localhost:9090/metrics');
-    },
-);
+const tracer_exporter = new TraceExporter({ serviceName: 'food-finder' });
+const metric_exporter = new MetricExporter({projectId: projectId});
 
 
 const provider = new BasicTracerProvider();
@@ -32,11 +29,11 @@ provider.register();
 const tracer = opentelemetry.trace.getTracer('example-basic-tracer-node');
 const meter = new MeterProvider({
   exporter: metric_exporter,
-  interval: 1000,
+  interval: 60000,
 }).getMeter('example-prometheus');
 
 // Monotonic counters can only be increased.
-const requestCount = meter.createCounter('Requests', {
+const requestCount = meter.createCounter('request_count', {
   monotonic: true,
   labelKeys: ['pid'],
   description: 'Counts the number of requests',
@@ -55,7 +52,22 @@ const responseLatency = meter.createObserver("response_latency", {
   description: "Records latency of response"
 });
 
-const labels = {pid: process.pid}
+
+let measuredLatency = 0;
+
+function helper() {
+  return measuredLatency;
+}
+
+const observable = new MetricObservable();
+responseLatency.setCallback((result) => {
+  result.observe(helper, {pid: "what"});
+  result.observe(observable, {pid: "what"});
+})
+
+//setInterval(() => {observable.next(helper())}, 1000);
+
+const labels = {pid: process.pid.toString()};
 
 
 
@@ -83,6 +95,7 @@ app.get('/', (req, res) => {
  * Given a food, return the IDs of vendors
  */
 async function getVendors(name, price_span) {
+  try {
   const vendorSpan = tracer.startSpan("getVendors", {parent:price_span});
   let food = await fetch("http://localhost:3000/api/vendors/" + name)
       .then(res => res.json())
@@ -94,6 +107,9 @@ async function getVendors(name, price_span) {
     return [];
   }
   return food[0].vendors;
+} catch {
+  return [];
+}
 }
 
 /*
@@ -103,6 +119,7 @@ async function getVendors(name, price_span) {
  * 2) Get the vendor information from those IDs
  */
 async function getPrices(name) {
+  try {
   const price_span = tracer.startSpan(`getPrices_${name}`);
   const vendors = await getVendors(name, price_span);
   let result = [];
@@ -121,19 +138,25 @@ async function getPrices(name) {
   price_span.addEvent("Overall event");
   price_span.end();
   return result;
+  }
+  catch {
+    return [];
+  }
 }
 
 // Sends a food, returns the prices of every vendor that has it
 app.post('/api/vendors', async (req, res) => {
+  try {
   const requestReceived = new Date().getTime();
   requestCount.bind(labels).add(1);
-  errorCount.bind(labels).add(1);
+  meter.collect();
   const result = await getPrices(req.body.food);
-  const measuredLatency = new Date().getTime() - requestReceived;
-  //responseLatency.bind(labels).observe(measuredLatency);
+  measuredLatency = new Date().getTime() - requestReceived;
+  observable.next(measuredLatency);
   console.log("HERE");
   console.log(measuredLatency);
   res.send(result);
+  } catch (error) {console.log(error);}
 });
 
 // Given an individual food, return the vendors that have it
